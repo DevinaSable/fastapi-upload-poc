@@ -1,45 +1,31 @@
-import pytest
 import io
-from fastapi.testclient import TestClient
-from app.main import app
-
-client = TestClient(app)
+import pytest
 
 
-def get_token(username="devd", password="secret123") -> str:
-    """Helper — login and return JWT token."""
-    response = client.post("/auth/login", json={
-        "username": username,
-        "password": password
-    })
-    return response.json()["access_token"]
-
-
-def test_upload_success():
-    token = get_token()
-    file_content = b"hello world pdf content"
+def test_upload_success(client, auth_headers):
+    content = b"hello world pdf content"
     response = client.post(
         "/files/upload",
-        headers={"Authorization": f"Bearer {token}"},
-        files={"file": ("test.pdf", io.BytesIO(file_content), "application/pdf")},
+        headers=auth_headers,
+        files={"file": ("test.pdf", io.BytesIO(content), "application/pdf")},
     )
     assert response.status_code == 200
     data = response.json()
     assert data["filename"] == "test.pdf"
-    assert data["size_bytes"] == len(file_content)
+    assert data["size_bytes"] == len(content)
     assert "devd" in data["message"]
+    assert "storage_path" in data
 
 
-def test_upload_no_token():
-    file_content = b"some content"
+def test_upload_no_token(client):
     response = client.post(
         "/files/upload",
-        files={"file": ("test.pdf", io.BytesIO(file_content), "application/pdf")},
+        files={"file": ("test.pdf", io.BytesIO(b"content"), "application/pdf")},
     )
-    assert response.status_code == 403   # no auth header at all
+    assert response.status_code == 403
 
 
-def test_upload_invalid_token():
+def test_upload_invalid_token(client):
     response = client.post(
         "/files/upload",
         headers={"Authorization": "Bearer this.is.fake"},
@@ -48,20 +34,28 @@ def test_upload_invalid_token():
     assert response.status_code == 401
 
 
-def test_upload_disallowed_extension():
-    token = get_token()
+def test_upload_disallowed_extension(client, auth_headers):
     response = client.post(
         "/files/upload",
-        headers={"Authorization": f"Bearer {token}"},
-        files={"file": ("malware.exe", io.BytesIO(b"bad content"), "application/octet-stream")},
+        headers=auth_headers,
+        files={"file": ("malware.exe", io.BytesIO(b"bad"), "application/octet-stream")},
     )
     assert response.status_code == 415
 
 
-def test_upload_no_file():
-    token = get_token()
+def test_upload_no_file(client, auth_headers):
     response = client.post(
         "/files/upload",
-        headers={"Authorization": f"Bearer {token}"},
+        headers=auth_headers,
     )
-    assert response.status_code == 422   # missing required field
+    assert response.status_code == 422
+
+
+def test_upload_expired_token(client):
+    """Tampered token must be rejected."""
+    response = client.post(
+        "/files/upload",
+        headers={"Authorization": "Bearer eyJhbGciOiJIUzI1NiJ9.fake.payload"},
+        files={"file": ("test.pdf", io.BytesIO(b"content"), "application/pdf")},
+    )
+    assert response.status_code == 401
