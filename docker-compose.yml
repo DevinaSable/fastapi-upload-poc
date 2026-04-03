@@ -1,0 +1,25 @@
+services:
+  api:
+    build:
+      context: .
+      target: runtime         # use final stage
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env.dev              # local secrets, not committed
+    volumes:
+      - ./app:/app/app        # hot-reload source in dev
+      - uploads_data:/tmp/uploads
+    command: >
+      uvicorn app.main:app
+      --host 0.0.0.0
+      --port 8000
+      --reload                # dev only
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  uploads_data:
