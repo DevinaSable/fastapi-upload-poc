@@ -1,19 +1,43 @@
+import os
+
+# ── Must be set BEFORE any app imports ────────────────────────────
+os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///:memory:"
+os.environ["JWT_SECRET_KEY"] = "test-secret-key-for-ci-only"
+os.environ["ENVIRONMENT"] = "dev"
+os.environ["DEBUG"] = "true"
+os.environ["TESTING"] = "true"       
+
+
+import asyncio
+import bcrypt
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
-from sqlalchemy.orm import DeclarativeBase
-import bcrypt
+from sqlalchemy import text
 
 from app.main import app
 from app.db.session import get_db, Base
-from app.models.db_models import User
+from app.models.db_models import User  # noqa: F401 — registers models
 
-# ── In-memory SQLite for tests (no PostgreSQL needed in CI) ────────
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 
-test_engine = create_async_engine(TEST_DATABASE_URL, connect_args={"check_same_thread": False})
-TestSessionLocal = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+test_engine = create_async_engine(
+    TEST_DATABASE_URL,
+    connect_args={"check_same_thread": False},
+)
+TestSessionLocal = async_sessionmaker(
+    test_engine,
+    class_=AsyncSession,
+    expire_on_commit=False,
+)
 
+
+# ── Create tables once synchronously at module load ───────────────
+async def _create_tables():
+    async with test_engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+asyncio.run(_create_tables())
 
 async def override_get_db():
     async with TestSessionLocal() as session:
@@ -25,19 +49,19 @@ async def override_get_db():
             raise
 
 
-@pytest.fixture(scope="session", autouse=True)
-async def setup_db():
-    """Create all tables once for the test session."""
-    async with test_engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    yield
-    async with test_engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
+# ── Override DB before client is created ─────────────────────────
+app.dependency_overrides[get_db] = override_get_db
+
+
+@pytest.fixture(scope="session")
+def client():
+    with TestClient(app) as c:
+        yield c
 
 
 @pytest.fixture(autouse=True)
-async def seed_user():
-    """Insert test user before each test, clean up after."""
+async def seed_and_cleanup():
+    """Seed test user before each test, clean up after."""
     async with TestSessionLocal() as session:
         user = User(
             username="devd",
@@ -45,30 +69,22 @@ async def seed_user():
         )
         session.add(user)
         await session.commit()
+
     yield
-    # Cleanup after each test
+
     async with TestSessionLocal() as session:
-        from sqlalchemy import text
         await session.execute(text("DELETE FROM refresh_tokens"))
         await session.execute(text("DELETE FROM users"))
         await session.commit()
 
 
-@pytest.fixture(scope="session")
-def client():
-    app.dependency_overrides[get_db] = override_get_db
-    with TestClient(app) as c:
-        yield c
-    app.dependency_overrides.clear()
-
-
 @pytest.fixture
 def auth_tokens(client):
-    """Login and return both tokens."""
     response = client.post("/auth/login", json={
         "username": "devd",
         "password": "secret123"
     })
+    assert response.status_code == 200, f"Login failed: {response.text}"
     return response.json()
 
 
