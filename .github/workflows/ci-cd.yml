@@ -30,7 +30,7 @@ jobs:
           JWT_SECRET_KEY: test-secret-key-for-ci-only
           ENVIRONMENT: dev
           DEBUG: "true"
-          DATABASE_URL: sqlite+aiosqlite:///:memory:
+          DATABASE_URL: "sqlite+aiosqlite:///:memory:"
           STORAGE_BACKEND: local
           TESTING: "true"
         run: pytest tests/ -v --tb=short
