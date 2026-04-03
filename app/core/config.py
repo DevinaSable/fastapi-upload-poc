@@ -1,6 +1,6 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from functools import lru_cache
-
+import os, tempfile
 
 class Settings(BaseSettings):
     # App
@@ -14,7 +14,9 @@ class Settings(BaseSettings):
     JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
 
     # Upload
-    UPLOAD_DIR: str = "/tmp/uploads"
+    # UPLOAD_DIR: str = "/tmp/uploads"
+    UPLOAD_DIR: str = os.path.join(tempfile.gettempdir(), "uploads")
+
     MAX_UPLOAD_SIZE_MB: int = 10
     ALLOWED_EXTENSIONS: list[str] = ["pdf", "png", "jpg", "jpeg", "csv"]
 
