@@ -30,6 +30,9 @@ jobs:
           JWT_SECRET_KEY: test-secret-key-for-ci-only
           ENVIRONMENT: dev
           DEBUG: "true"
+          DATABASE_URL: sqlite+aiosqlite:///:memory:
+          STORAGE_BACKEND: local
+          TESTING: "true"
         run: pytest tests/ -v --tb=short
 
   # ── 2. Build & Push ───────────────────────────────────────────────
@@ -41,14 +44,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
 
       - name: Extract metadata
         id: meta
@@ -69,7 +72,7 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  # ── 3. Performance & Security Checks ─────────────────────────────
+  # ── 3. Quality ────────────────────────────────────────────────────
   quality:
     needs: build-and-push
     runs-on: ubuntu-latest
@@ -96,9 +99,19 @@ jobs:
           JWT_SECRET_KEY: test-secret-key-for-ci-only
           ENVIRONMENT: dev
           DEBUG: "true"
+          DATABASE_URL: sqlite+aiosqlite:///./test_load.db
+          STORAGE_BACKEND: local
+          TESTING: "true"
         run: |
           uvicorn app.main:app --host 0.0.0.0 --port 8000 &
-          sleep 3
+
+          # Wait until app is actually ready (up to 15s)
+          for i in {1..15}; do
+            curl -sf http://localhost:8000/health && break
+            echo "Waiting for app... ($i)"
+            sleep 1
+          done
+
           locust -f tests/locustfile.py \
             --headless \
             --users 10 \
@@ -112,108 +125,3 @@ jobs:
         with:
           name: load-test-report
           path: tests/load_report.html
-
-
-# name: CI/CD Pipeline
-
-# on:
-#   push:
-#     branches: [main, develop]
-#   pull_request:
-#     branches: [main]
-
-# env:
-#   REGISTRY: ${{ secrets.ACR_LOGIN_SERVER }}     # e.g. myacr.azurecr.io
-#   IMAGE_NAME: fastapi-upload-poc
-
-# jobs:
-#   # ── 1. Test ──────────────────────────────────────────────────────
-#   test:
-#     runs-on: ubuntu-latest
-#     steps:
-#       - uses: actions/checkout@v4
-
-#       - name: Set up Python
-#         uses: actions/setup-python@v5
-#         with:
-#           python-version: "3.12"
-#           cache: "pip"
-
-#       - name: Install dependencies
-#         run: pip install -r requirements.txt
-
-#       - name: Run tests
-#         env:
-#           JWT_SECRET_KEY: test-secret-key-for-ci-only
-#           ENVIRONMENT: dev
-#           DEBUG: "true"
-#         run: pytest tests/ -v --tb=short
-
-#   # ── 2. Build & Push (main branch only) ───────────────────────────
-#   # build-and-push:
-#   #   needs: test
-#   #   runs-on: ubuntu-latest
-#   #   if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-
-#   #   steps:
-#   #     - uses: actions/checkout@v4
-
-#   #     - name: Log in to Azure Container Registry
-#   #       uses: docker/login-action@v3
-#   #       with:
-#   #         registry: ${{ secrets.ACR_LOGIN_SERVER }}
-#   #         username: ${{ secrets.ACR_USERNAME }}
-#   #         password: ${{ secrets.ACR_PASSWORD }}
-
-#   #     - name: Extract metadata (tags, labels)
-#   #       id: meta
-#   #       uses: docker/metadata-action@v5
-#   #       with:
-#   #         images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-#   #         tags: |
-#   #           type=sha,prefix=sha-          # git SHA tag
-#   #           type=raw,value=latest         # always update latest
-
-#   #     - name: Build and push image
-#   #       uses: docker/build-push-action@v6
-#   #       with:
-#   #         context: .
-#   #         push: true
-#   #         tags: ${{ steps.meta.outputs.tags }}
-#   #         labels: ${{ steps.meta.outputs.labels }}
-#   #         cache-from: type=gha
-#   #         cache-to: type=gha,mode=max    # GitHub Actions cache = faster builds
-
-
-#   build-and-push:
-#     needs: test
-#     runs-on: ubuntu-latest
-#     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-
-#     steps:
-#       - uses: actions/checkout@v4
-
-#       - name: Log in to Docker Hub
-#         uses: docker/login-action@v3
-#         with:
-#           username: ${{ secrets.DOCKERHUB_USERNAME }}
-#           password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-#       - name: Extract metadata
-#         id: meta
-#         uses: docker/metadata-action@v5
-#         with:
-#           images: ${{ secrets.DOCKERHUB_USERNAME }}/fastapi-upload-poc
-#           tags: |
-#             type=sha,prefix=sha-
-#             type=raw,value=latest
-
-#       - name: Build and push image
-#         uses: docker/build-push-action@v6
-#         with:
-#           context: .
-#           push: true
-#           tags: ${{ steps.meta.outputs.tags }}
-#           labels: ${{ steps.meta.outputs.labels }}
-#           cache-from: type=gha
-#           cache-to: type=gha,mode=max
