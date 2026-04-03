@@ -1,9 +1,9 @@
-import os
-import aiofiles
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
 from app.auth.dependencies import get_current_user
-from app.models.schemas import UploadResponse
 from app.core.config import get_settings
+from app.core.limiter import limiter
+from app.models.schemas import UploadResponse
+from app.storage import get_storage
 
 router = APIRouter(prefix="/files", tags=["files"])
 settings = get_settings()
@@ -19,13 +19,14 @@ def _validate_file(file: UploadFile) -> None:
 
 
 @router.post("/upload", response_model=UploadResponse)
+@limiter.limit(settings.RATE_LIMIT_UPLOAD)       # 🔒 20 uploads/min per IP
 async def upload_file(
+    request: Request,
     file: UploadFile = File(...),
-    current_user: dict = Depends(get_current_user),   # 🔒 JWT required
+    current_user: dict = Depends(get_current_user),
 ):
     _validate_file(file)
 
-    # Read with size guard
     max_bytes = settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024
     content = await file.read(max_bytes + 1)
     if len(content) > max_bytes:
@@ -34,14 +35,12 @@ async def upload_file(
             detail=f"File exceeds {settings.MAX_UPLOAD_SIZE_MB}MB limit",
         )
 
-    os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
-    dest = os.path.join(settings.UPLOAD_DIR, file.filename)
-
-    async with aiofiles.open(dest, "wb") as out:
-        await out.write(content)
+    storage = get_storage()
+    path = await storage.save(file.filename, content)
 
     return UploadResponse(
         filename=file.filename,
         size_bytes=len(content),
+        storage_path=path,
         message=f"Uploaded by {current_user['sub']}",
     )

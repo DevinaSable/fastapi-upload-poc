@@ -1,0 +1,19 @@
+services:
+  api:
+    image: ${DOCKERHUB_USERNAME}/fastapi-upload-poc:latest
+    ports:
+      - "8000:8000"
+    environment:
+      - ENVIRONMENT=prod
+      - DEBUG=false
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - DATABASE_URL=${DATABASE_URL}
+      - STORAGE_BACKEND=azure
+      - AZURE_STORAGE_CONNECTION_STRING=${AZURE_STORAGE_CONNECTION_STRING}
+      - AZURE_STORAGE_CONTAINER_NAME=${AZURE_STORAGE_CONTAINER_NAME}
+    restart: always
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3

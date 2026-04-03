@@ -23,7 +23,7 @@ COPY --from=builder /install /usr/local
 # Copy source
 COPY app/ ./app/
 
-# Uploads dir owned by app user
+# Uploads dir owned by app user to store upload files
 RUN mkdir -p /tmp/uploads && chown appuser:appgroup /tmp/uploads
 
 USER appuser
