@@ -2,7 +2,7 @@ fastapi==0.115.0
 uvicorn[standard]==0.30.6
 python-multipart==0.0.12      # required for file uploads
 python-jose[cryptography]==3.3.0  # JWT
-passlib[bcrypt]==1.7.4        # password hashing
+bcrypt==4.2.0        # password hashing
 pydantic-settings==2.4.0      # env-based config
 aiofiles==24.1.0              # async file I/O
 

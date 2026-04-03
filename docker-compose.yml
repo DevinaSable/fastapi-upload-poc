@@ -14,7 +14,7 @@ services:
       uvicorn app.main:app
       --host 0.0.0.0
       --port 8000
-      --reload                # dev only
+      --reload               
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
