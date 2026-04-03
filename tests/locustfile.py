@@ -1,13 +1,17 @@
 from locust import HttpUser, task, between
 import json
 
-
 class HealthUser(HttpUser):
     wait_time = between(1, 2)
 
     @task
     def health_check(self):
-        self.client.get("/health")
+        with self.client.get("/health", catch_response=True) as response:
+            if response.status_code == 200:
+                response.success()
+            else:
+                response.failure(f"Unexpected status: {response.status_code}")
+
 
 class UploadUser(HttpUser):
     wait_time = between(1, 3)
